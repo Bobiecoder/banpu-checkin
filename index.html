@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <title>Banpu New Year – Check-in</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <style>
+    :root {
+      --bg: #e9eef4;
+      --ink: #1b2a41;
+      --muted: #5b6b80;
+      --primary: #2451d6;
+      --ok: #1e8e5a;
+      --warn: #b86e00;
+      --err: #c2362f;
+      --panel: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      font-family: "IBM Plex Sans Thai", Tahoma, "Noto Sans Thai", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      -webkit-tap-highlight-color: transparent;
+    }
+    .wrap { max-width: 480px; margin: 0 auto; padding: 20px 16px 32px; }
+    h1 { font-size: 1.35rem; margin: 0 0 4px; font-weight: 700; }
+    .sub { margin: 0 0 18px; color: var(--muted); font-size: 0.95rem; }
+
+    /* ช่องมองกล้อง */
+    .viewfinder {
+      position: relative;
+      aspect-ratio: 1 / 1;
+      background: #d4dbe5;
+      border-radius: 20px;
+      overflow: hidden;
+    }
+    video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .placeholder {
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      text-align: center; padding: 24px; color: var(--muted); font-size: 0.95rem;
+    }
+    .frame { position: absolute; inset: 14%; pointer-events: none; }
+    .frame i {
+      position: absolute; width: 34px; height: 34px;
+      border: 4px solid #fff; border-radius: 4px;
+      opacity: .9;
+    }
+    .frame i:nth-child(1) { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+    .frame i:nth-child(2) { top: 0; right: 0; border-left: 0; border-bottom: 0; }
+    .frame i:nth-child(3) { bottom: 0; left: 0; border-right: 0; border-top: 0; }
+    .frame i:nth-child(4) { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+    .viewfinder:not(.live) .frame { display: none; }
+    .viewfinder.live .placeholder { display: none; }
+
+    /* ปุ่ม */
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0; }
+    button {
+      font: inherit; font-weight: 600; font-size: 1rem;
+      padding: 14px 12px; border-radius: 12px; border: 2px solid transparent;
+      cursor: pointer; min-height: 52px;
+    }
+    button:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    #btnStart { background: var(--primary); color: #fff; }
+    #btnStop { background: transparent; color: var(--ink); border-color: var(--ink); }
+    #btnPhoto {
+      grid-column: 1 / -1; background: var(--panel); color: var(--primary);
+      border-color: var(--primary);
+    }
+    #btnPhoto.suggest { background: var(--primary); color: #fff; }
+    #photoInput { display: none; }
+
+    /* ผลลัพธ์ */
+    .result {
+      background: var(--panel);
+      border-left: 8px solid var(--muted);
+      border-radius: 12px;
+      padding: 16px 18px;
+      min-height: 96px;
+      position: relative;
+      overflow: hidden;
+    }
+    .result .msg { font-size: 1.2rem; font-weight: 700; margin: 0; word-break: break-word; }
+    .result .meta { margin: 6px 0 0; color: var(--muted); font-size: 0.9rem; }
+    .result.success { border-color: var(--ok); }
+    .result.success .msg { color: var(--ok); }
+    .result.already { border-color: var(--warn); }
+    .result.already .msg { color: var(--warn); }
+    .result.notfound, .result.error { border-color: var(--err); }
+    .result.notfound .msg, .result.error .msg { color: var(--err); }
+    .result.loading { border-color: var(--primary); }
+
+    .countdown {
+      position: absolute; left: 0; bottom: 0; height: 4px; width: 100%;
+      background: currentColor; opacity: .25; transform-origin: left;
+      transform: scaleX(0);
+    }
+    .countdown.run { animation: shrink 3s linear forwards; }
+    @keyframes shrink { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+    @media (prefers-reduced-motion: reduce) { .countdown.run { animation: none; } }
+
+    .stats { margin-top: 12px; color: var(--muted); font-size: 0.85rem; text-align: center; }
+    canvas { display: none; }
+    .manual { margin: 0 0 16px; }
+    .manual label { display: block; font-size: 0.9rem; color: var(--muted); margin-bottom: 6px; }
+    .manual-row { display: flex; gap: 8px; }
+    .manual input {
+      flex: 1; min-width: 0; font: inherit; font-size: 1rem; padding: 12px 14px;
+      border: 2px solid #c3ccd8; border-radius: 12px; background: var(--panel); color: var(--ink);
+    }
+    .manual input:focus-visible { outline: none; border-color: var(--primary); }
+    #btnManual { background: var(--ink); color: #fff; padding: 12px 18px; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <h1>เช็คอินผู้เข้าร่วมงาน</h1>
+    <p class="sub">สแกน QR Code จากอีเมลยืนยันของผู้ลงทะเบียน</p>
+
+    <div class="viewfinder" id="viewfinder">
+      <video id="video" playsinline muted></video>
+      <div class="frame"><i></i><i></i><i></i><i></i></div>
+      <div class="placeholder" id="placeholder">กด "เปิดกล้องเพื่อสแกน" เพื่อเริ่มเช็คอิน</div>
+    </div>
+    <canvas id="canvas"></canvas>
+
+    <div class="actions">
+      <button id="btnStart" type="button">เปิดกล้องเพื่อสแกน</button>
+      <button id="btnStop" type="button" disabled>ปิดกล้อง</button>
+      <button id="btnPhoto" type="button">ถ่ายรูป / เลือกรูป QR Code (สำรอง)</button>
+    </div>
+    <input type="file" id="photoInput" accept="image/*">
+
+    <form class="manual" id="manualForm" autocomplete="off">
+      <label for="manualId">หรือพิมพ์ Register ID</label>
+      <div class="manual-row">
+        <input id="manualId" type="text" inputmode="text" placeholder="REG-1727…-2" spellcheck="false">
+        <button type="submit" id="btnManual">เช็คอิน</button>
+      </div>
+    </form>
+
+    <section class="result" id="result" aria-live="polite">
+      <p class="msg" id="resultMsg">รอสแกน</p>
+      <p class="meta" id="resultMeta">ผลการเช็คอินจะแสดงที่นี่</p>
+      <div class="countdown" id="countdown"></div>
+    </section>
+
+    <p class="stats" id="stats">เช็คอินสำเร็จในรอบนี้: 0 คน</p>
+
+  </main>
+
+  <script>
+    // ===== ตั้งค่า: วางลิงก์ Web App (/exec) ของ Apps Script ที่นี่ =====
+    const API_URL = 'https://script.google.com/macros/s/AKfycbywYqrNUlzVH1gptTxPQMrsknHjS5bNwiQzCAvNsTcFivZ0hLp2XsAFB5feZCiKYvXnxA/exec';
+    // ================================================================
+
+    async function callApi(action, id) {
+      if (!API_URL.startsWith('https://script.google.com/')) {
+        throw new Error('ยังไม่ได้ใส่ API_URL ในโค้ดหน้าเว็บ');
+      }
+      const url = API_URL + '?action=' + encodeURIComponent(action) +
+        '&id=' + encodeURIComponent(id || '') +
+        '&t=' + Date.now();
+      const res = await fetch(url, { method: 'GET', redirect: 'follow' });
+      const text = await res.text();
+      try { return JSON.parse(text); }
+      catch (e) { throw new Error('ระบบตอบกลับไม่ใช่ข้อมูลเช็คอิน ตรวจว่า Deploy แบบ Anyone แล้ว'); }
+    }
+
+    const RESET_DELAY = 3000;      // แสดงผลลัพธ์ 3 วินาทีก่อนพร้อมสแกนคนถัดไป
+    const SAME_CODE_COOLDOWN = 6000; // กันการสแกน QR เดิมซ้ำทันที
+
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const viewfinder = document.getElementById('viewfinder');
+    const placeholder = document.getElementById('placeholder');
+    const btnStart = document.getElementById('btnStart');
+    const btnStop = document.getElementById('btnStop');
+    const resultBox = document.getElementById('result');
+    const resultMsg = document.getElementById('resultMsg');
+    const resultMeta = document.getElementById('resultMeta');
+    const countdown = document.getElementById('countdown');
+    const stats = document.getElementById('stats');
+
+    let stream = null;
+    let scanning = false;   // กล้องเปิดและกำลังวนสแกน
+    let busy = false;       // กำลังประมวลผล/แสดงผลลัพธ์
+    let lastCode = '';
+    let lastCodeTime = 0;
+    let resetTimer = null;
+    let successCount = 0;
+
+    const btnPhoto = document.getElementById('btnPhoto');
+    const photoInput = document.getElementById('photoInput');
+
+    btnStart.addEventListener('click', startCamera);
+    btnStop.addEventListener('click', stopCamera);
+    btnPhoto.addEventListener('click', function () {
+      if (busy) return;
+      photoInput.click();
+    });
+    photoInput.addEventListener('change', scanPhoto);
+
+    async function startCamera() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showResult('error', 'เบราว์เซอร์นี้ไม่รองรับการใช้กล้อง', 'ลองเปิดด้วย Chrome หรือ Safari เวอร์ชันล่าสุด');
+        return;
+      }
+      btnStart.disabled = true;
+      placeholder.textContent = 'กำลังเปิดกล้อง...';
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+        video.srcObject = stream;
+        await video.play();
+        viewfinder.classList.add('live');
+        btnStop.disabled = false;
+        scanning = true;
+        busy = false;
+        showReady();
+        requestAnimationFrame(tick);
+      } catch (err) {
+        btnStart.disabled = false;
+        placeholder.textContent = 'กด "เปิดกล้องเพื่อสแกน" เพื่อเริ่มเช็คอิน';
+        const code = (err && err.name) || 'Error';
+        const detail = (err && err.message) ? ' – ' + err.message : '';
+        btnPhoto.classList.add('suggest');
+        showResult('error',
+          'เปิดกล้องสดในหน้านี้ไม่ได้',
+          'ใช้ปุ่ม "ถ่ายรูป QR Code" ด้านบนแทนได้เลย (รหัสข้อผิดพลาด: ' + code + detail + ')');
+      }
+    }
+
+    function stopCamera() {
+      scanning = false;
+      busy = false;
+      clearTimeout(resetTimer);
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      stream = null;
+      video.srcObject = null;
+      viewfinder.classList.remove('live');
+      placeholder.textContent = 'กล้องปิดอยู่ กด "เปิดกล้องเพื่อสแกน" เพื่อเริ่มใหม่';
+      btnStart.disabled = false;
+      btnStop.disabled = true;
+    }
+
+    // Chrome บน Android มีตัวอ่าน QR ในตัว เร็วและแม่นกว่า ใช้ก่อนถ้ามี
+    let liveDetector = null;
+    try { if ('BarcodeDetector' in window) liveDetector = new BarcodeDetector({ formats: ['qr_code'] }); } catch (e) {}
+    let detecting = false;
+
+    function onLiveCode(raw) {
+      const value = raw.trim();
+      const now = Date.now();
+      if (value === lastCode && now - lastCodeTime < SAME_CODE_COOLDOWN) return;
+      lastCode = value;
+      lastCodeTime = now;
+      handleCode(value);
+    }
+
+    function tick() {
+      if (!scanning) return;
+
+      if (liveDetector && !busy && !detecting && video.readyState === video.HAVE_ENOUGH_DATA) {
+        detecting = true;
+        liveDetector.detect(video)
+          .then(function (found) { if (!busy && found.length && found[0].rawValue) onLiveCode(found[0].rawValue); })
+          .catch(function () { liveDetector = null; })   // ใช้ไม่ได้ก็สลับไป jsQR
+          .finally(function () { detecting = false; });
+        requestAnimationFrame(tick);
+        return;
+      }
+
+      if (!liveDetector && !busy && video.readyState === video.HAVE_ENOUGH_DATA) {
+        // ย่อภาพให้กว้างไม่เกิน 640px เพื่อให้สแกนเร็วบนมือถือ
+        const scale = Math.min(1, 640 / video.videoWidth);
+        const w = Math.floor(video.videoWidth * scale);
+        const h = Math.floor(video.videoHeight * scale);
+        canvas.width = w;
+        canvas.height = h;
+        ctx.drawImage(video, 0, 0, w, h);
+        const img = ctx.getImageData(0, 0, w, h);
+        const code = typeof jsQR === 'function' ? jsQR(img.data, w, h, { inversionAttempts: 'dontInvert' }) : null;
+
+        if (code && code.data) onLiveCode(code.data);
+      }
+      requestAnimationFrame(tick);
+    }
+
+    function handleCode(value) {
+      busy = true;
+      showResult('loading', 'กำลังตรวจสอบ...', value);
+
+      callApi('checkin', value)
+        .then(function (res) {
+          if (res.status === 'success') {
+            successCount++;
+            stats.textContent = 'เช็คอินสำเร็จในรอบนี้: ' + successCount + ' คน';
+          }
+          const meta = res.status === 'success' ? 'เวลา ' + res.time + ' · ' + value
+                     : res.status === 'already' ? res.detail
+                     : value;
+          showResult(res.status, res.message, meta);
+          feedback(res.status);
+          scheduleReset();
+        })
+        .catch(function (err) {
+          showResult('error', 'เชื่อมต่อระบบไม่สำเร็จ', err.message || String(err));
+          feedback('error');
+          scheduleReset();
+        });
+    }
+
+    // โหมดสำรอง: ถ่ายรูปหรือเลือกรูป แล้วอ่าน QR จากรูป
+    async function scanPhoto() {
+      const file = photoInput.files && photoInput.files[0];
+      photoInput.value = '';
+      if (!file) return;
+      busy = true;
+      showResult('loading', 'กำลังอ่าน QR Code จากรูป...', '');
+      try {
+        const img = await loadImage(file);
+        const value = await decodeImage(img);
+        if (value) {
+          handleCode(value);
+        } else {
+          busy = false;
+          showResult('notfound', 'ไม่พบ QR Code ในรูป',
+            'ถ่ายใหม่ให้ QR อยู่กลางภาพและชัด หรือพิมพ์ Register ID แทน ' +
+            '(รูป ' + img.naturalWidth + '×' + img.naturalHeight +
+            ', ตัวอ่าน: ' + decoderInfo() + ')');
+          feedback('error');
+        }
+      } catch (err) {
+        busy = false;
+        showResult('error', 'อ่านรูปไม่สำเร็จ', (err && err.message) || String(err));
+        feedback('error');
+      }
+    }
+
+    function loadImage(file) {
+      return new Promise(function (resolve, reject) {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = function () { resolve(img); setTimeout(() => URL.revokeObjectURL(url), 1000); };
+        img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('เปิดไฟล์รูปไม่ได้ (' + (file.type || 'unknown') + ')')); };
+        img.src = url;
+      });
+    }
+
+    function decoderInfo() {
+      const parts = [];
+      if ('BarcodeDetector' in window) parts.push('BarcodeDetector');
+      if (typeof jsQR === 'function') parts.push('jsQR'); else parts.push('jsQR โหลดไม่สำเร็จ');
+      return parts.join(' + ');
+    }
+
+    async function decodeImage(img) {
+      // ก) ตัวอ่าน QR ที่มากับ Chrome บน Android (แม่นกว่า jsQR มาก)
+      if ('BarcodeDetector' in window) {
+        try {
+          const detector = new BarcodeDetector({ formats: ['qr_code'] });
+          const found = await detector.detect(img);
+          if (found.length && found[0].rawValue) return found[0].rawValue.trim();
+        } catch (e) { console.warn('BarcodeDetector', e); }
+      }
+      // ข) jsQR: ลองหลายขนาดและครอปกลางภาพ เพราะรูปจากมือถือใหญ่มากและ QR มักเล็กในภาพ
+      if (typeof jsQR !== 'function') return null;
+      const W = img.naturalWidth, H = img.naturalHeight;
+      const crops = [
+        [0, 0, W, H],                                   // ทั้งภาพ
+        [W * 0.2, H * 0.2, W * 0.6, H * 0.6],           // กลางภาพ 60%
+        [W * 0.3, H * 0.3, W * 0.4, H * 0.4]            // กลางภาพ 40%
+      ];
+      const sizes = [1600, 1000, 600];
+      for (const [sx, sy, sw, sh] of crops) {
+        for (const max of sizes) {
+          const scale = Math.min(1, max / Math.max(sw, sh));
+          const w = Math.round(sw * scale), h = Math.round(sh * scale);
+          canvas.width = w; canvas.height = h;
+          ctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+          const data = ctx.getImageData(0, 0, w, h);
+          const code = jsQR(data.data, w, h, { inversionAttempts: 'attemptBoth' });
+          if (code && code.data) return code.data.trim();
+        }
+      }
+      return null;
+    }
+
+    // พิมพ์รหัสเอง
+    document.getElementById('manualForm').addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      const input = document.getElementById('manualId');
+      const value = input.value.trim().toUpperCase();
+      if (!value || busy) return;
+      input.value = '';
+      input.blur();
+      handleCode(value);
+    });
+
+    function scheduleReset() {
+      countdown.classList.remove('run');
+      void countdown.offsetWidth; // รีสตาร์ทแอนิเมชัน
+      countdown.classList.add('run');
+      clearTimeout(resetTimer);
+      resetTimer = setTimeout(function () {
+        busy = false;
+        countdown.classList.remove('run');
+        showReady();
+      }, RESET_DELAY);
+    }
+
+    function showReady() {
+      showResult('', 'พร้อมสแกนคนถัดไป',
+        scanning ? 'หันกล้องไปที่ QR Code ให้อยู่ในกรอบ' : 'กด "ถ่ายรูป QR Code" เพื่อเช็คอินคนถัดไป');
+    }
+
+    function showResult(status, msg, meta) {
+      resultBox.className = 'result' + (status ? ' ' + status : '');
+      resultMsg.textContent = msg;
+      resultMeta.textContent = meta || '';
+    }
+
+    // เสียงและการสั่นเพื่อให้เจ้าหน้าที่รู้ผลโดยไม่ต้องมองจอ
+    window.addEventListener('load', function () {
+      if (typeof jsQR !== 'function' && !('BarcodeDetector' in window)) {
+        showResult('error', 'โหลดตัวอ่าน QR ไม่สำเร็จ', 'ตรวจสอบอินเทอร์เน็ตแล้วรีเฟรชหน้า หรือพิมพ์ Register ID แทน');
+      }
+    });
+
+    // ทดสอบการเชื่อมต่อชีตตอนเปิดหน้า
+    callApi('ping')
+      .then(function (r) {
+        if (r.status === 'ok') showResult('', 'พร้อมใช้งาน', r.message);
+        else showResult('error', 'เชื่อมต่อชีตไม่สำเร็จ', r.message);
+      })
+      .catch(function (err) { showResult('error', 'เชื่อมต่อระบบไม่สำเร็จ', err.message || String(err)); });
+
+    let audioCtx = null;
+    function feedback(status) {
+      try {
+        if (navigator.vibrate) navigator.vibrate(status === 'success' ? 120 : [80, 60, 80]);
+        audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.frequency.value = status === 'success' ? 880 : 330;
+        gain.gain.value = 0.08;
+        osc.connect(gain).connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + (status === 'success' ? 0.15 : 0.35));
+      } catch (e) { /* ไม่มีเสียงก็ใช้งานได้ปกติ */ }
+    }
+  </script>
+</body>
+</html>
