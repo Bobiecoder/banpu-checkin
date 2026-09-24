@@ -106,6 +106,51 @@
 
     .stats { margin-top: 12px; color: var(--muted); font-size: 0.85rem; text-align: center; }
     canvas { display: none; }
+
+    /* ===== Pop-up ผลการเช็คอิน ===== */
+    .popup {
+      position: fixed; inset: 0; z-index: 50;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px; background: rgba(15, 23, 38, 0.55);
+      opacity: 0; visibility: hidden; transition: opacity .15s ease, visibility .15s;
+    }
+    .popup.show { opacity: 1; visibility: visible; }
+    .popup-card {
+      width: 100%; max-width: 360px; background: #fff; border-radius: 22px;
+      padding: 28px 22px 26px; text-align: center; position: relative; overflow: hidden;
+      transform: scale(.92); transition: transform .18s ease;
+      box-shadow: 0 20px 50px rgba(0,0,0,.25);
+    }
+    .popup.show .popup-card { transform: scale(1); }
+    .popup-icon {
+      width: 84px; height: 84px; border-radius: 50%; margin: 0 auto 14px;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; background: var(--muted);
+    }
+    .popup-icon svg { width: 46px; height: 46px; }
+    .popup-title { font-size: 1.45rem; font-weight: 700; margin: 0; line-height: 1.35; word-break: break-word; }
+    .popup-meta { margin: 8px 0 0; color: var(--muted); font-size: 0.95rem; line-height: 1.5; word-break: break-word; }
+    .popup-hint { margin: 16px 0 0; font-size: 0.8rem; color: #8a97a8; }
+    .popup-bar {
+      position: absolute; left: 0; bottom: 0; height: 6px; width: 100%;
+      transform-origin: left; transform: scaleX(0); background: var(--muted);
+    }
+    .popup-bar.run { animation: shrink 3s linear forwards; }
+
+    .popup.success .popup-icon, .popup.success .popup-bar { background: var(--ok); }
+    .popup.success .popup-title { color: var(--ok); }
+    .popup.already .popup-icon, .popup.already .popup-bar { background: var(--warn); }
+    .popup.already .popup-title { color: var(--warn); }
+    .popup.notfound .popup-icon, .popup.notfound .popup-bar,
+    .popup.error .popup-icon, .popup.error .popup-bar { background: var(--err); }
+    .popup.notfound .popup-title, .popup.error .popup-title { color: var(--err); }
+    .popup.loading .popup-icon { background: var(--primary); }
+    .popup.loading .popup-icon svg { animation: spin 0.9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      .popup, .popup-card { transition: none; }
+      .popup.loading .popup-icon svg { animation: none; }
+    }
     .manual { margin: 0 0 16px; }
     .manual label { display: block; font-size: 0.9rem; color: var(--muted); margin-bottom: 6px; }
     .manual-row { display: flex; gap: 8px; }
@@ -153,6 +198,16 @@
     <p class="stats" id="stats">เช็คอินสำเร็จในรอบนี้: 0 คน</p>
 
   </main>
+
+  <div class="popup" id="popup" role="alertdialog" aria-live="assertive" aria-labelledby="popupTitle">
+    <div class="popup-card">
+      <div class="popup-icon" id="popupIcon"></div>
+      <p class="popup-title" id="popupTitle"></p>
+      <p class="popup-meta" id="popupMeta"></p>
+      <p class="popup-hint" id="popupHint">แตะเพื่อปิด</p>
+      <div class="popup-bar" id="popupBar"></div>
+    </div>
+  </div>
 
   <script>
     // ===== ตั้งค่า: วางลิงก์ Web App (/exec) ของ Apps Script ที่นี่ =====
@@ -427,7 +482,54 @@
       resultBox.className = 'result' + (status ? ' ' + status : '');
       resultMsg.textContent = msg;
       resultMeta.textContent = meta || '';
+      if (status) showPopup(status, msg, meta); else hidePopup();
     }
+
+    // ===== Pop-up =====
+    const popup = document.getElementById('popup');
+    const popupIcon = document.getElementById('popupIcon');
+    const popupTitle = document.getElementById('popupTitle');
+    const popupMeta = document.getElementById('popupMeta');
+    const popupHint = document.getElementById('popupHint');
+    const popupBar = document.getElementById('popupBar');
+    let popupTimer = null;
+
+    const ICONS = {
+      success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+      already: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 6.5v7"/><path d="M12 17.5v.01"/></svg>',
+      notfound: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></svg>',
+      loading: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9"/></svg>'
+    };
+    ICONS.error = ICONS.notfound;
+
+    function showPopup(status, msg, meta) {
+      clearTimeout(popupTimer);
+      popup.className = 'popup show ' + status;
+      popupIcon.innerHTML = ICONS[status] || ICONS.error;
+      popupTitle.textContent = msg;
+      popupMeta.textContent = meta || '';
+      popupBar.classList.remove('run');
+
+      if (status === 'loading') {
+        popupHint.textContent = 'กรุณารอสักครู่';
+        return;
+      }
+      popupHint.textContent = 'แตะเพื่อปิด';
+      void popupBar.offsetWidth;       // รีสตาร์ทแถบนับถอยหลัง
+      popupBar.classList.add('run');
+      popupTimer = setTimeout(hidePopup, RESET_DELAY);
+    }
+
+    function hidePopup() {
+      clearTimeout(popupTimer);
+      popup.classList.remove('show');
+      popupBar.classList.remove('run');
+    }
+
+    popup.addEventListener('click', function () {
+      if (popup.classList.contains('loading')) return;  // กำลังตรวจสอบอยู่ ห้ามปิด
+      hidePopup();
+    });
 
     // เสียงและการสั่นเพื่อให้เจ้าหน้าที่รู้ผลโดยไม่ต้องมองจอ
     window.addEventListener('load', function () {
